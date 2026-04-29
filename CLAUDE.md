@@ -67,8 +67,6 @@ RecoveryManager watches all components → restarts on crash
 
 ## Development Commands
 
-> Commands will be added here as the project is scaffolded. Expected structure:
-
 ```bash
 # Install dependencies
 pip install -r requirements.txt
@@ -158,11 +156,34 @@ Build and validate each phase before moving to the next.
 
 ---
 
-## Open Decisions (confirm before implementing)
+## Project Structure
 
-- Credential storage location (`.env` path, secrets manager, etc.)
-- Alert channel (Telegram bot token, Discord webhook, etc.)
-- Slippage alert threshold (no blocking in v1; add in later phase)
-- Polling frequency for the notification bell
-- Strategy for stable unique trade ID (notification ID, timestamp+trader combo, etc.)
-- Whether to validate trade data against the detail page before executing (tradeoff: accuracy vs. latency)
+```
+modules/
+  session_manager.py      → Playwright login, cookie persistence (session/cookies.json)
+  notification_monitor.py → Bell polling loop, emits RawNotification events
+  trade_parser.py         → Extracts fields from notification text, generates trade_id
+  state_store.py          → SQLite (involio.db); copied_trades + system_events tables
+  alerting_module.py      → Email via Gmail SMTP; convenience methods per alert type
+main.py                   → Entry point; wires all modules, restart loop
+```
+
+Credentials and config live in `.env` — never in code or commits. The `session/`, `logs/`, `screenshots/`, and `*.db` files are git-ignored.
+
+## Resolved Decisions
+
+| Decision | Value |
+|---|---|
+| Credentials | `.env` — `INVOLIO_EMAIL` / `INVOLIO_PASSWORD` |
+| Alert channel | Email — `ALERT_EMAIL_TO=dullmoss@gmail.com` via Gmail SMTP |
+| Alert email password | Set `ALERT_EMAIL_PASSWORD` in `.env` (Gmail app password) |
+| Polling frequency | 20 seconds (`POLL_INTERVAL_SECONDS=20`) |
+| Unique trade ID | `SHA256(trader_id \| raw_text[:200] \| minute_bucket)[:20]` |
+| Validation before execution | Use notification as trigger; validate in detail page only if latency allows (Phase 3 decision) |
+| Authorized traders | `AUTHORIZED_TRADERS` in `.env` — comma-separated; if empty, all traders are blocked |
+
+## Open Decisions (Phase 3+)
+
+- Exact Involio CSS selectors — must be verified against the live interface before running (see `# TODO` comments in `session_manager.py` and `notification_monitor.py`)
+- Slippage alert threshold (log always; block in a later phase)
+- Whether to validate trade data against the detail page before executing
